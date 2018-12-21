@@ -9,6 +9,7 @@ const CAR_LENGTH = 12;
 const CAR_WIDTH = CAR_LENGTH * 1.1;
 const CAR_COLOR = "#833aff";
 const CHECKPOINT_DISTANCE = 100;
+const N_CARS = 3;
 
 const test = new Vector(1, 0);
 console.info(test.angle);
@@ -24,7 +25,7 @@ console.info(test.angle);
 class Car {
     constructor (x, y) {
         this.pos = new Vector(x, y);
-        this.vel = new Vector(1, 0);
+        this.vel = Vector.fromAngle(Math.random() * TAU);
         this.acc = new Vector();
         this.anchorCheckpoint = new Vector();
         this.nextCheckpoint = new Vector();
@@ -36,13 +37,14 @@ class Rush {
     constructor () {
         this.canvas = document.createElement("canvas");
         document.body.appendChild(this.canvas);
+        this.context = this.canvas.getContext("2d");
 
         window.addEventListener("resize", this.resize.bind(this));
         this.resize();
 
-        this.car = new Car(this.canvas.width / 2, this.canvas.height / 2 + CHECKPOINT_DISTANCE / 2);
+        this.cars = Array.from(Array(N_CARS), () =>
+            new Car(Math.random() * this.canvas.width, Math.random() * this.canvas.height));
 
-        this.context = this.canvas.getContext("2d");
         this.updateFn = this.update.bind(this);
         requestAnimationFrame(this.updateFn);
     }
@@ -50,6 +52,10 @@ class Rush {
     resize() {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
+
+        const ctx = this.context;
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
     /**
@@ -69,8 +75,6 @@ class Rush {
         const anchorCheckpoint = new Vector(
             anchorCheckpointCol * CHECKPOINT_DISTANCE, anchorCheckpointRow * CHECKPOINT_DISTANCE
         );
-        const direction = (new Vector()).set(car.pos).subtract(car.anchorCheckpoint);
-        const angle = direction.angle;
 
         // ctx.strokeStyle = "red";
         // ctx.lineWidth = 1;
@@ -82,12 +86,20 @@ class Rush {
 
         if (car.anchorCheckpoint.x !== anchorCheckpoint.x || car.anchorCheckpoint.y !== anchorCheckpoint.y) {
             car.anchorCheckpoint.set(anchorCheckpoint.x, anchorCheckpoint.y);
+            const direction = (new Vector()).set(car.pos).subtract(car.anchorCheckpoint);
+            const angle = direction.angle + Math.PI;
 
+            /* Quadrants (angle increases clockwise starting from east direction):
+
+                  3rd  |  4th
+                  -----+-----
+                  2nd  |  1st
+             */
             let options = null;
             if (angle < FIRST_QUADRANT) {
                 options = [[1, 0], [1, 1], [0, 1]];
             } else if (angle < SECOND_QUADRANT) {
-                options = [[-1, 0], [-1, 1], [0, 1]];
+                options = [[0, 1], [-1, 1], [-1, 0]];
             } else if (angle < THIRD_QUADRANT) {
                 options = [[-1, 0], [-1, -1], [0, -1]];
             } else {
@@ -129,7 +141,7 @@ class Rush {
         const w = this.canvas.width;
         const h = this.canvas.height;
 
-        ctx.fillStyle = "rgba(0, 0, 0, .1)";
+        ctx.fillStyle = "black";
         ctx.fillRect(0, 0, w, h);
 
         ctx.fillStyle = "#ccc";
@@ -139,7 +151,9 @@ class Rush {
             }
         }
 
-        this.updateCar(this.car);
+        for (const car of this.cars) {
+            this.updateCar(car);
+        }
 
         requestAnimationFrame(this.updateFn);
     }

@@ -114,4 +114,12 @@ export default class Vector {
         result.y = v1.y - v2.y;
         return result;
     }
+
+    /**
+     * @param {Number} radians
+     * @returns {Vector}
+     */
+    static fromAngle(radians) {
+        return new Vector(Math.cos(radians), Math.sin(radians));
+    }
 }

@@ -2,33 +2,38 @@
 import Vector from "./vector.js";
 
 const TAU = Math.PI * 2;
-const FIRST_QUADRANT = Math.PI / 2;
-const SECOND_QUADRANT = Math.PI;
-const THIRD_QUADRANT = 3 * Math.PI / 2;
 const CAR_LENGTH = 12;
 const CAR_WIDTH = CAR_LENGTH * 1.1;
 const CAR_COLOR = "#833aff";
 const CHECKPOINT_DISTANCE = 100;
-const N_CARS = 3;
+const N_CARS = 300;
 
-const test = new Vector(1, 0);
-console.info(test.angle);
-test.set(0, -1);
-console.info(test.angle);
-test.set(-1, 0);
-console.info(test.angle);
-test.set(0, 1);
-console.info(test.angle);
-test.set(1, 1);
-console.info(test.angle);
+function random(a, b) {
+    return a + Math.random() * (b - a);
+}
 
 class Car {
     constructor (x, y) {
         this.pos = new Vector(x, y);
         this.vel = Vector.fromAngle(Math.random() * TAU);
         this.acc = new Vector();
-        this.anchorCheckpoint = new Vector();
+        /** @type {Anchor} */
+        this.anchor = null;
         this.nextCheckpoint = new Vector();
+    }
+}
+
+class Anchor {
+    /**
+     * @param {Number} index
+     * @param {Number} x
+     * @param {Number} y
+     * @param {Vector[]} exitVectors
+     */
+    constructor (index, x, y, exitVectors) {
+        this.index = index;
+        this.pos = new Vector(x, y);
+        this.exitVectors = exitVectors;
     }
 }
 
@@ -43,19 +48,52 @@ class Rush {
         this.resize();
 
         this.cars = Array.from(Array(N_CARS), () =>
-            new Car(Math.random() * this.canvas.width, Math.random() * this.canvas.height));
+            new Car(
+                random(CHECKPOINT_DISTANCE, this.canvas.width - CHECKPOINT_DISTANCE),
+                random(CHECKPOINT_DISTANCE, this.canvas.height - CHECKPOINT_DISTANCE)
+            ));
 
         this.updateFn = this.update.bind(this);
         requestAnimationFrame(this.updateFn);
     }
 
     resize() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+        const w = this.canvas.width = window.innerWidth;
+        const h = this.canvas.height = window.innerHeight;
+        this.widthInAnchors = Math.floor(w / CHECKPOINT_DISTANCE);
+        this.heightInAnchors = Math.floor(h / CHECKPOINT_DISTANCE);
+
+        this.anchors = Array(this.widthInAnchors * this.heightInAnchors);
+        for (let y = 0; y < h; y += CHECKPOINT_DISTANCE) {
+            for (let x = 0; x < w; x += CHECKPOINT_DISTANCE) {
+                const direction = Math.floor(Math.random() * 4);
+                let options;
+                switch (direction) {
+                    case 0: options = [[1, -1], [1, 0], [1, 1]]; break;
+                    case 1: options = [[1, 1], [0, 1], [-1, 1]]; break;
+                    case 2: options = [[-1, -1], [-1, 0], [-1, 1]]; break;
+                    case 3: options = [[-1, -1], [0, -1], [1, -1]]; break;
+                }
+                // let exits = options.filter(() => Math.random() > 0.5);
+                // if (exits.length === 0) {
+                    // must have at least one exit
+                    const exitIndex = Math.floor(Math.random() * options.length);
+                    const exits = options.slice(exitIndex, exitIndex + 1);
+                // }
+                const col = Math.floor(x / CHECKPOINT_DISTANCE);
+                const row = Math.floor(y / CHECKPOINT_DISTANCE);
+                const index = row * this.widthInAnchors + col;
+                const exitVectors = exits
+                    .map(([dx, dy]) => [x + CHECKPOINT_DISTANCE * dx, y + CHECKPOINT_DISTANCE * dy])
+                    .map(coords => new Vector(...coords));
+                this.anchors[index] = new Anchor(index, x, y, exitVectors);
+            }
+        }
+        console.info(this.anchors);
 
         const ctx = this.context;
         ctx.fillStyle = "black";
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.fillRect(0, 0, w, h);
     }
 
     /**
@@ -72,9 +110,11 @@ class Rush {
         // debug anchor checkpoint
         const anchorCheckpointCol = Math.floor(car.pos.x / CHECKPOINT_DISTANCE) + checkpointXOffset;
         const anchorCheckpointRow = Math.floor(car.pos.y / CHECKPOINT_DISTANCE) + checkpointYOffset;
-        const anchorCheckpoint = new Vector(
-            anchorCheckpointCol * CHECKPOINT_DISTANCE, anchorCheckpointRow * CHECKPOINT_DISTANCE
-        );
+        const anchorIndex = anchorCheckpointRow * this.widthInAnchors + anchorCheckpointCol;
+        if (anchorIndex < 0 || anchorIndex >= this.anchors.length) {
+            console.error(anchorIndex);
+        }
+        const anchor = this.anchors[anchorIndex];
 
         // ctx.strokeStyle = "red";
         // ctx.lineWidth = 1;
@@ -84,38 +124,17 @@ class Rush {
         // ctx.lineTo(direction.x, direction.y);
         // ctx.stroke();
 
-        if (car.anchorCheckpoint.x !== anchorCheckpoint.x || car.anchorCheckpoint.y !== anchorCheckpoint.y) {
-            car.anchorCheckpoint.set(anchorCheckpoint.x, anchorCheckpoint.y);
-            const direction = (new Vector()).set(car.pos).subtract(car.anchorCheckpoint);
-            const angle = direction.angle + Math.PI;
-
-            /* Quadrants (angle increases clockwise starting from east direction):
-
-                  3rd  |  4th
-                  -----+-----
-                  2nd  |  1st
-             */
-            let options = null;
-            if (angle < FIRST_QUADRANT) {
-                options = [[1, 0], [1, 1], [0, 1]];
-            } else if (angle < SECOND_QUADRANT) {
-                options = [[0, 1], [-1, 1], [-1, 0]];
-            } else if (angle < THIRD_QUADRANT) {
-                options = [[-1, 0], [-1, -1], [0, -1]];
-            } else {
-                options = [[0, -1], [1, -1], [1, 0]];
-            }
-            const chosenIndex = Math.floor(Math.random() * options.length);
-            const nextCol = anchorCheckpointCol + options[chosenIndex][0];
-            const nextRow = anchorCheckpointRow + options[chosenIndex][1];
-            car.nextCheckpoint.set(nextCol * CHECKPOINT_DISTANCE, nextRow * CHECKPOINT_DISTANCE);
+        if (car.anchor !== anchor) {
+            car.anchor = anchor;
+            const nextIndex = Math.floor(Math.random() * car.anchor.exitVectors.length);
+            car.nextCheckpoint.set(car.anchor.exitVectors[nextIndex]);
         }
         ctx.fillStyle = "yellow";
-        ctx.fillRect(car.anchorCheckpoint.x, car.anchorCheckpoint.y, 3, 3);
+        ctx.fillRect(car.anchor.pos.x, car.anchor.pos.y, 3, 3);
         ctx.fillStyle = "blue";
         ctx.fillRect(car.nextCheckpoint.x, car.nextCheckpoint.y, 3, 3);
 
-        const desiredAcc = new Vector();
+        const desiredAcc = car.acc;
         desiredAcc.set(car.nextCheckpoint).subtract(car.pos).normalize().scale(.2);
 
         // car.vel.normalize().scale(1);

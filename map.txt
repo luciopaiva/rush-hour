@@ -1,0 +1,8 @@
+
+ >>x>>>x>>>v
+ ^ v ^ v ^ v
+ ^<x<x<x<x<x
+ ^ v ^ v ^ v
+ x>x>x>x>x>v
+ ^ v ^ v ^ v
+ ^<<<x<<<x<<

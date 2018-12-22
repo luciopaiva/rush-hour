@@ -20,6 +20,7 @@ class Car {
         /** @type {Anchor} */
         this.anchor = null;
         this.nextCheckpoint = new Vector();
+        this.hasNextCheckpoint = false;
     }
 }
 
@@ -39,7 +40,15 @@ class Anchor {
 
 class Rush {
 
-    constructor () {
+    constructor (map) {
+        const lines = map.split("\n");
+        this.mapHeight = lines.length;
+        const largestLine = lines.reduce((l, line) => Math.max(l, line.length), 0);
+        this.map = lines.map(line => line + " ".repeat(largestLine - line.length)).join("");
+        console.info(this.map);
+        console.info(largestLine, this.mapHeight, largestLine * this.mapHeight, this.map.length);
+        this.mapWidth = largestLine;
+
         this.canvas = document.createElement("canvas");
         document.body.appendChild(this.canvas);
         this.context = this.canvas.getContext("2d");
@@ -66,34 +75,54 @@ class Rush {
         this.anchors = Array(this.widthInAnchors * this.heightInAnchors);
         for (let y = 0; y < h; y += CHECKPOINT_DISTANCE) {
             for (let x = 0; x < w; x += CHECKPOINT_DISTANCE) {
-                const direction = Math.floor(Math.random() * 4);
-                let options;
-                switch (direction) {
-                    case 0: options = [[1, -1], [1, 0], [1, 1]]; break;
-                    case 1: options = [[1, 1], [0, 1], [-1, 1]]; break;
-                    case 2: options = [[-1, -1], [-1, 0], [-1, 1]]; break;
-                    case 3: options = [[-1, -1], [0, -1], [1, -1]]; break;
-                }
-                // let exits = options.filter(() => Math.random() > 0.5);
-                // if (exits.length === 0) {
-                    // must have at least one exit
-                    const exitIndex = Math.floor(Math.random() * options.length);
-                    const exits = options.slice(exitIndex, exitIndex + 1);
-                // }
                 const col = Math.floor(x / CHECKPOINT_DISTANCE);
                 const row = Math.floor(y / CHECKPOINT_DISTANCE);
                 const index = row * this.widthInAnchors + col;
-                const exitVectors = exits
-                    .map(([dx, dy]) => [x + CHECKPOINT_DISTANCE * dx, y + CHECKPOINT_DISTANCE * dy])
-                    .map(coords => new Vector(...coords));
+
+                let exitVectors = [];
+                if (col < this.mapWidth && row < this.mapHeight) {
+                    const mapIndex = row * this.mapWidth + col;
+                    switch (this.map[mapIndex]) {
+                        case ">": exitVectors.push(new Vector(x + CHECKPOINT_DISTANCE, y)); break;
+                        case "v": exitVectors.push(new Vector(x, y + CHECKPOINT_DISTANCE)); break;
+                        case "<": exitVectors.push(new Vector(x - CHECKPOINT_DISTANCE, y)); break;
+                        case "^": exitVectors.push(new Vector(x, y - CHECKPOINT_DISTANCE)); break;
+                        case "x":
+                            if (this.map[mapIndex + 1] !== "<" && this.map[mapIndex + 1] !== " ") {
+                                exitVectors.push(new Vector(x + CHECKPOINT_DISTANCE, y));
+                            }
+                            if (this.map[mapIndex + this.mapWidth] !== "^" && this.map[mapIndex + this.mapWidth] !== " ") {
+                                exitVectors.push(new Vector(x, y + CHECKPOINT_DISTANCE));
+                            }
+                            if (this.map[mapIndex - 1] !== ">" && this.map[mapIndex - 1] !== " ") {
+                                exitVectors.push(new Vector(x - CHECKPOINT_DISTANCE, y));
+                            }
+                            if (this.map[mapIndex - this.mapWidth] !== "v" && this.map[mapIndex - this.mapWidth] !== " ") {
+                                exitVectors.push(new Vector(x, y - CHECKPOINT_DISTANCE));
+                            }
+                            break;
+                    }
+                }
+
                 this.anchors[index] = new Anchor(index, x, y, exitVectors);
             }
         }
-        console.info(this.anchors);
 
         const ctx = this.context;
         ctx.fillStyle = "black";
         ctx.fillRect(0, 0, w, h);
+    }
+
+    findNearestAnchor(car) {
+        let checkpointXOffset = (car.pos.x % CHECKPOINT_DISTANCE) > CHECKPOINT_DISTANCE / 2 ? 1 : 0;
+        let checkpointYOffset = (car.pos.y % CHECKPOINT_DISTANCE) > CHECKPOINT_DISTANCE / 2 ? 1 : 0;
+
+        const anchorCheckpointCol = Math.floor(car.pos.x / CHECKPOINT_DISTANCE) + checkpointXOffset;
+        const anchorCheckpointRow = Math.floor(car.pos.y / CHECKPOINT_DISTANCE) + checkpointYOffset;
+        const anchorIndex = anchorCheckpointRow * this.widthInAnchors + anchorCheckpointCol;
+        const anchor = this.anchors[anchorIndex];
+
+        return anchor;
     }
 
     /**
@@ -104,40 +133,22 @@ class Rush {
         const w = this.canvas.width;
         const h = this.canvas.height;
 
-        let checkpointXOffset = (car.pos.x % CHECKPOINT_DISTANCE) > CHECKPOINT_DISTANCE / 2 ? 1 : 0;
-        let checkpointYOffset = (car.pos.y % CHECKPOINT_DISTANCE) > CHECKPOINT_DISTANCE / 2 ? 1 : 0;
+        const anchor = this.findNearestAnchor(car);
 
-        // debug anchor checkpoint
-        const anchorCheckpointCol = Math.floor(car.pos.x / CHECKPOINT_DISTANCE) + checkpointXOffset;
-        const anchorCheckpointRow = Math.floor(car.pos.y / CHECKPOINT_DISTANCE) + checkpointYOffset;
-        const anchorIndex = anchorCheckpointRow * this.widthInAnchors + anchorCheckpointCol;
-        if (anchorIndex < 0 || anchorIndex >= this.anchors.length) {
-            console.error(anchorIndex);
-        }
-        const anchor = this.anchors[anchorIndex];
-
-        // ctx.strokeStyle = "red";
-        // ctx.lineWidth = 1;
-        // ctx.beginPath();
-        // direction.normalize().scale(20).add(anchorCheckpoint);
-        // ctx.moveTo(anchorCheckpoint.x, anchorCheckpoint.y);
-        // ctx.lineTo(direction.x, direction.y);
-        // ctx.stroke();
-
-        if (car.anchor !== anchor) {
+        if (car.anchor !== anchor && anchor !== undefined) {
             car.anchor = anchor;
-            const nextIndex = Math.floor(Math.random() * car.anchor.exitVectors.length);
-            car.nextCheckpoint.set(car.anchor.exitVectors[nextIndex]);
+            car.hasNextCheckpoint = car.anchor.exitVectors.length > 0;
+            if (car.hasNextCheckpoint) {
+                const nextIndex = Math.floor(Math.random() * car.anchor.exitVectors.length);
+                car.nextCheckpoint.set(car.anchor.exitVectors[nextIndex]);
+            }
         }
-        ctx.fillStyle = "yellow";
-        ctx.fillRect(car.anchor.pos.x, car.anchor.pos.y, 3, 3);
-        ctx.fillStyle = "blue";
-        ctx.fillRect(car.nextCheckpoint.x, car.nextCheckpoint.y, 3, 3);
 
-        const desiredAcc = car.acc;
-        desiredAcc.set(car.nextCheckpoint).subtract(car.pos).normalize().scale(.2);
+        const desiredAcc = car.acc.clear();
+        if (car.hasNextCheckpoint) {
+            desiredAcc.set(car.nextCheckpoint).subtract(car.pos).normalize().scale(.2);
+        }
 
-        // car.vel.normalize().scale(1);
         car.vel.add(desiredAcc).limit(3);
 
         car.pos.add(car.vel);
@@ -164,9 +175,23 @@ class Rush {
         ctx.fillRect(0, 0, w, h);
 
         ctx.fillStyle = "#ccc";
+        ctx.font = "14px sans-serif";
         for (let x = 0; x < w; x += CHECKPOINT_DISTANCE) {
             for (let y = 0; y < h; y += CHECKPOINT_DISTANCE) {
-                ctx.fillRect(x, y, 1, 1);
+                // ctx.fillRect(x, y, 1, 1);
+
+                const col = Math.floor(x / CHECKPOINT_DISTANCE);
+                const row = Math.floor(y / CHECKPOINT_DISTANCE);
+
+                if (col < this.mapWidth && row < this.mapHeight) {
+                    const mapIndex = row * this.mapWidth + col;
+                    ctx.fillText(this.map[mapIndex], x, y);
+                }
+
+                // const index = row * this.widthInAnchors + col;
+                // if (index < this.anchors.length && this.anchors[index].exitVectors.length > 0) {
+                //     ctx.fillRect(x, y, 3, 3);
+                // }
             }
         }
 
@@ -178,4 +203,8 @@ class Rush {
     }
 }
 
-new Rush();
+(async function run() {
+    const response = await fetch("map.txt");
+    const map = await response.text();
+    new Rush(map);
+})();
